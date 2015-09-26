@@ -62,12 +62,12 @@
 								</span>
 							{{/each}}
 						</div>
-						<div class="input-group" style="height: 30px">
-							<form on-submit="send-chat">
+						<form on-submit="send-chat">
+							<div class="input-group" style="height: 30px">
 								<input id="chatbox" autocomplete="off" type="text" value="{{ message }}" class="form-control" placeholder="Send message...">
 								<div class="input-group-btn"><button class="btn btn-success"><span class="glyphicon glyphicon-send"></span></button></div>
-							</form>
-						</div>
+							</div>
+						</form>
 					</div>
 				</div>
 			</div>
@@ -92,12 +92,12 @@
 				</div>
 				<div class="col-md-3">
 					<div class="panel panel-body">
-   						 <div class="input-group">
-							<form on-submit="change-name">
+						<form on-submit="change-name">
+   						 	<div class="input-group">
 								<input type="text" value="{{ username }}" class="form-control" placeholder="Set your username...">
 								<div class="input-group-btn"><button class="btn btn-success"><span class="glyphicon glyphicon-ok"></span></button></div>
-							</form>
-						</div>
+							</div>
+						</form>
 					</div>
 					<div class="panel panel-body">
 						<table class='table' id="users-table">
