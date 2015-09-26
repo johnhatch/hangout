@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset='utf-8'>
+		<title>Streamer Test</title>
+		<script src='http://cdn.ractivejs.org/latest/ractive.js'></script>
+		<script type="text/javascript" src='https://cdnjs.cloudflare.com/ajax/libs/jquery/2.1.4/jquery.min.js'></script>
+		<link rel="stylesheet" type="text/css" href="css/volume.css">
+		<link rel="stylesheet" type="text/css" href="css/history.css">
+		<link rel="stylesheet" type="text/css" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
+		<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
+		<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.11.4/jquery-ui.min.js"></script>
+		<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.10.6/moment.min.js"></script>
+		<script src="https://cdn.socket.io/socket.io-1.2.0.js"></script>
+	</head>
+	<body>
+		
+		<div class="container">
+			<div id='container'></div>
+		</div>
+
+		<script id='template' type='text/ractive'>
+			<div class="row">
+				<div class="col-md-6">
+					<div class="panel panel-body">
+						{{ title }} ({{ minute_format(duration) }})
+					</div>
+				</div>
+				<div class="col-md-4">
+					<div class="panel panel-body">
+						Instantly share a video (any youtube URL or ID):
+						<input type='text' class='form-control' value="{{ vid }}">
+					</div>
+				</div>
+				<div class="col-md-2">
+					<div class="panel panel-body">
+						<div class="volume-container">	
+							<span></span>
+							<div id="slider"></div>
+							<span class="volume"></span>
+						</div>
+						<button id="sync-btn" class='btn btn-xs btn-group-justified btn-danger pull-right' on-click='sync-video'>Re-Sync Video</button>
+					</div>
+				</div>
+			</div>
+
+			<div class="row">
+				<div class="col-md-9">
+					<div class="panel panel-body">
+						<div id="player"></div>
+					</div>
+				</div>
+				<div class="col-md-3">
+					<div class="panel panel-body">
+						<div style="height: 400px; overflow: auto;">
+							{{#each chat}}
+								{{ #if (!chat[@index-1] || chat[@index-1].uid != uid) }}
+									<b style="font-size:8pt">{{ users[uid].name }}</b><br>
+								{{ /if }}
+								<span style="display:block;border-left:1px solid #ccc;padding-left:5px;">
+									{{ message }}
+								</span>
+							{{/each}}
+						</div>
+						<div class="input-group" style="height: 30px">
+							<form on-submit="send-chat">
+								<input id="chatbox" autocomplete="off" type="text" value="{{ message }}" class="form-control" placeholder="Send message...">
+								<div class="input-group-btn"><button class="btn btn-success"><span class="glyphicon glyphicon-send"></span></button></div>
+							</form>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="row">
+				<div class="col-md-9">
+					<div class="panel panel-body">
+						<table class='table' id="history-table">
+							<tr>
+								<th>Time</th>
+								<th>Event</th>
+							</tr>
+
+							{{#each history}}
+								<tr class='{{ cls }}'>
+									<td>{{ time_format(timestamp) }}</td>
+									<td>{{ content }}</td>
+								</tr>
+							{{/each}}
+						</table>
+					</div>
+				</div>
+				<div class="col-md-3">
+					<div class="panel panel-body">
+   						 <div class="input-group">
+							<form on-submit="change-name">
+								<input type="text" value="{{ username }}" class="form-control" placeholder="Set your username...">
+								<div class="input-group-btn"><button class="btn btn-success"><span class="glyphicon glyphicon-ok"></span></button></div>
+							</form>
+						</div>
+					</div>
+					<div class="panel panel-body">
+						<table class='table' id="users-table">
+							<tr>
+								<th>Current Users Online</th>
+							</tr>
+
+							{{#each users}}
+								<tr>
+									<td> - {{{ username_format(name) }}}</td>
+								</tr>
+							{{/each}}
+						</table>
+					</div>
+				</div>
+			</div>
+
+			<script type="text/javascript">
+				// Create Player
+					var tag = document.createElement('script');
+					tag.src = "https://www.youtube.com/iframe_api";
+					var firstScriptTag = document.getElementsByTagName('script')[0];
+					firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+					var player;
+					var current_video = {};
+					function onYouTubeIframeAPIReady() {
+						player = new YT.Player('player', {
+							height: '390',
+							width: '640',
+							events: {
+								'onReady': onPlayerReady,
+								'onStateChange': onPlayerStateChange
+							}
+						});
+					}
+
+				// Play video on startup
+					function onPlayerReady(event) {
+						socket.emit('get-video');		
+						socket.on('set-video', function(video){
+							current_video = video;
+							syncVideo();
+							addHistory('video-change', getUserName(video.user_id)+' has changed the video to: '+video.id);
+						});
+					}
+					function onPlayerStateChange(event) {
+						ractive.set('title', player.getVideoData().title);
+						ractive.set('duration', player.getDuration());
+						ractive.set('volume', player.getVolume());
+					}
+					function syncVideo(){
+						player.setVolume(ractive.get('volume'));
+						player.loadVideoById(yt_format(current_video.id));
+						player.seekTo(((Date.now() - current_video.timestamp) / 1000 | 0) + 2);
+						setTimeout(function(){ player.seekTo(((Date.now() - current_video.timestamp) / 1000 | 0) + 2); },3000);
+					}
+
+				$(function() {
+
+					//Store frequently elements in variables
+					var slider  = $('#slider'),
+						tooltip = $('.tooltip');
+
+					//Hide the Tooltip at first
+					tooltip.hide();
+
+					//Call the Slider
+					slider.slider({
+						//Config
+						range: "min",
+						min: 0,
+						value: {{ volume }},
+
+						start: function(event,ui) {
+						    tooltip.fadeIn('fast');
+						},
+
+						//Slider Event
+						slide: function(event, ui) { //When the slider is sliding
+
+							var value  = slider.slider('value'),
+								volume = $('.volume');
+
+							tooltip.css('left', value).text(ui.value);  //Adjust the tooltip accordingly
+
+							if(value <= 5) { 
+								volume.css('background-position', '0 0');
+							} 
+							else if (value <= 25) {
+								volume.css('background-position', '0 -25px');
+							} 
+							else if (value <= 75) {
+								volume.css('background-position', '0 -50px');
+							} 
+							else {
+								volume.css('background-position', '0 -75px');
+							};
+
+							ractive.set('volume', value);
+
+						},
+
+						stop: function(event,ui) {
+						    tooltip.fadeOut('fast');
+						},
+					});
+
+				});
+
+			</script>
+		</script>
+		<script>
+		    function yt_format( url ){
+				var ID = '';
+				url = url.replace(/(>|<)/gi,'').split(/(vi\/|v=|\/v\/|youtu\.be\/|\/embed\/)/);
+				if(url[2] !== undefined) {
+					ID = url[2].split(/[^0-9a-z_\-]/i);
+					ID = ID[0];
+				}
+				else { ID = url[0]; }
+				return ID;
+			}
+			var socket = io.connect('http://127.0.0.1:3000');
+			var action_history = [];
+			var users = {};
+			var chat = [];
+			var ractive = new Ractive({
+				el: '#container',
+				template: '#template',
+				data: {
+					vid: 'dQw4w9WgXcQ',
+					volume: 50,
+					history: action_history,
+					users: users,
+					chat: chat,
+					time_format: function(timestamp){
+						return moment(timestamp).format('h:mm a');
+					},
+					username_format: function(name){
+						if(name == getUserName(socket.io.engine.id)) return '<b>'+name+'</b>';
+						return name;
+					},
+					get_uid_name: function(id){
+						return getUserName(id);
+					},
+					minute_format: function( num ){
+						var m = Math.floor(num / 60);
+						var s = Math.floor(num - m * 60);
+						var p = (s<10) ? '0' : '';
+						return m+':'+p+s;
+					}
+				}
+			});
+
+			function addHistory(cl,txt){
+				action_history.unshift({timestamp:Date.now(),cls:cl,content:txt});
+				if(action_history.length>6) action_history.pop();
+			}
+			function addChat(uid,msg){
+				chat.push({uid:uid,message:msg});
+				if(chat.length>20) chat.shift();
+			}
+			function getUserName(uid){
+				return (users[uid] != undefined ? users[uid].name : '['+uid+']');
+			}
+			function removeUser(uid){
+				delete users[uid];
+			}
+			function renameUser(uid,uname){
+				users[uid].name = uname;
+				ractive.update('users');
+			}
+			socket.emit('get-users');		
+			socket.on('set-users',function(data){
+				$.each(data,function(id,u){
+					var name = u.id;
+					if(u.name) name = u.name;
+					users[u.id] = {id:u.id,name:name};
+				});
+				addHistory('user-enter', 'User list retrieved from server.');
+				ractive.update('users');
+			});
+			socket.on('recieve-chat',function(data){
+				addChat(data.uid, data.message);
+			});
+			ractive.on('send-chat',function(e){
+				socket.emit('chat',ractive.get('message'));
+				ractive.set('message',null);
+				$('#chatbox').focus();
+				e.original.preventDefault();
+			});
+			socket.on('user-enter',function(uid){
+				if(uid != socket.io.engine.id){
+					users[uid] = {id:uid,name:uid};
+					addHistory('user-enter', getUserName(uid)+' has entered!');
+				}else{
+					addHistory('user-enter', 'Welcome!');
+				}
+			});
+			socket.on('user-leave',function(uid){
+				removeUser(uid);
+				addHistory('user-leave', getUserName(uid)+' has left!');
+			});
+			socket.on('set-name',function(r){
+				addHistory('user-rename', getUserName(r.user_id)+' has changed names to '+r.name);
+				renameUser(r.user_id,r.name);
+			});
+
+			ractive.on('sync-video',function(e){
+				player.seekTo(((Date.now() - current_video.timestamp) / 1000 | 0) + 2);
+			});
+			ractive.on('change-name',function(e){
+				socket.emit('rename',ractive.get('username'));
+				ractive.set('username',null);
+				e.original.preventDefault();
+			});
+			ractive.observe('vid',function(n,o,path){
+				if(n != o && o != undefined){
+					socket.emit('share-vid',yt_format(n));
+				}
+			});
+			ractive.observe('name',function(n,o,path){
+				if(n != o && o != undefined){
+					socket.emit('rename',n);
+				}
+			});
+			ractive.observe('volume',function(n,o,path){
+				if(n != o && o != undefined){
+					player.setVolume(n);
+				}
+			});
+  </script>
+	</body>
+</html>

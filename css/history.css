@@ -1,0 +1,12 @@
+tr.user-enter{
+	background-color: #C8ECCF;
+}
+tr.user-rename{
+	background-color: #ECE5C8;
+}
+tr.user-leave{
+	background-color: #ECC8C8;
+}
+tr.video-change{
+	background-color: #8FE6FF;
+}
